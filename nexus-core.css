@@ -14,7 +14,14 @@
   align-items:center;
   justify-content:space-between;
 }
-#nxSessionBanner .nx-left{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+
+#nxSessionBanner .nx-left{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
 #nxSessionBanner .nx-pill{
   padding: 6px 10px;
   border-radius: 999px;
@@ -23,6 +30,7 @@
   font-weight: 800;
   font-size: 12px;
 }
+
 #nxSessionBanner select{
   padding: 6px 10px;
   border-radius: 10px;
@@ -31,14 +39,46 @@
   color:#111;
   font-weight: 800;
 }
+
+/* ============================= */
+/* NEW — Language Toggle Support */
+/* ============================= */
+
+#nxSessionBanner .nx-right{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+#nxSessionBanner .nx-lang-toggle{
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.92);
+  font-weight: 800;
+  font-size: 12px;
+  cursor:pointer;
+  line-height:1.1;
+}
+
+#nxSessionBanner .nx-lang-toggle:hover{
+  background: rgba(255,255,255,0.16);
+}
+
+/* ============================= */
+
 @media print{
   #nxSessionBanner{ display:none !important; }
   .nx-print-page{ page-break-before: always; }
   .nx-print-avoid{ break-inside: avoid; page-break-inside: avoid; }
 }
 
+
 /* === NEXUS STANDARD THEME v1.4 === */
 /* Scope: only within .nexus-page to avoid disturbing legacy page-specific CSS. */
+
 :root{
   --nx-font: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
   --nx-text: rgba(20,20,20,0.92);
@@ -51,7 +91,9 @@
   --nx-maxw: 1100px;
 }
 
+
 /* Page frame */
+
 .nexus-page{
   min-height:100vh;
   font-family: var(--nx-font);
@@ -60,12 +102,14 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Background image (optional). Individual pages can keep their own backgrounds.
-   If the page doesn't set a background, this provides the standard NEXUS look. */
+
+/* Background image (optional) */
+
 .nexus-page.nx-bg,
 body.nx-bg .nexus-page{
   position: relative;
 }
+
 .nexus-page.nx-bg::before{
   content:"";
   position: fixed;
@@ -76,6 +120,7 @@ body.nx-bg .nexus-page{
   opacity: 0.95;
   z-index: -2;
 }
+
 .nexus-page.nx-bg::after{
   content:"";
   position: fixed;
@@ -84,7 +129,9 @@ body.nx-bg .nexus-page{
   z-index: -1;
 }
 
-/* Standard content container (opt-in by adding .nexus-sheet in markup if desired) */
+
+/* Standard content container */
+
 .nexus-sheet{
   width: min(var(--nx-maxw), calc(100% - 24px));
   margin: 18px auto;
@@ -95,7 +142,9 @@ body.nx-bg .nexus-page{
   padding: 16px;
 }
 
-/* Forms: gentle defaults, scoped */
+
+/* Forms */
+
 .nexus-page input,
 .nexus-page select,
 .nexus-page textarea{
@@ -125,7 +174,9 @@ body.nx-bg .nexus-page{
   box-shadow: 0 0 0 3px rgba(0,0,0,0.10);
 }
 
-/* Buttons: opt-in class, but also safe defaults for bare buttons */
+
+/* Buttons */
+
 .nexus-page .nx-btn,
 .nexus-page button{
   font: inherit;
@@ -152,31 +203,41 @@ body.nx-bg .nexus-page{
   cursor: not-allowed;
 }
 
-/* Tables: minimal polish, scoped */
+
+/* Tables */
+
 .nexus-page table{
   border-collapse: collapse;
   width: 100%;
 }
+
 .nexus-page th,
 .nexus-page td{
   border: 1px solid rgba(0,0,0,0.12);
   padding: 8px 10px;
   vertical-align: top;
 }
+
 .nexus-page th{
   background: rgba(0,0,0,0.06);
 }
 
+
 /* Utility */
+
 .nx-maxw{
   width: min(var(--nx-maxw), calc(100% - 24px));
   margin-left: auto;
   margin-right: auto;
 }
-.nx-muted{ color: var(--nx-muted); }
+
+.nx-muted{
+  color: var(--nx-muted);
+}
+
 
 /* === Torque Photo Preview: show FULL image (no crop) + larger box === */
-/* Safe: only affects the torque photo preview if it's using the stored key/id/class naming. */
+
 #torquePhotoPreview,
 #nxTorquePhotoPreview,
 #nxTorquePhoto,
@@ -202,17 +263,17 @@ body.nx-bg .nexus-page{
 .torquePhotoPreview img{
   display: block;
   width: 100%;
-  height: 420px;            /* larger box */
-  max-height: 60vh;         /* stays reasonable on tall screens */
-  object-fit: contain;      /* IMPORTANT: shows whole picture */
-  object-position: center;  /* centers letterboxing */
+  height: 420px;
+  max-height: 60vh;
+  object-fit: contain;
+  object-position: center;
   background: rgba(0,0,0,0.06);
   border-radius: 12px;
 }
-/* === FORCE FULL-VIEW IMAGE PREVIEWS (NO CROP) — DROP-IN OVERRIDE === */
-/* Put this at the VERY BOTTOM of nexus-core.css */
 
-/* Case A: torque photo is an <img> inside common preview containers */
+
+/* === FORCE FULL-VIEW IMAGE PREVIEWS (NO CROP) — DROP-IN OVERRIDE === */
+
 #torquePhotoPreview img,
 #nxTorquePhotoPreview img,
 #nxTorquePhoto img,
@@ -241,15 +302,14 @@ body.nx-bg .nexus-page{
 .nx-preview img{
   display:block !important;
   width:100% !important;
-  height:520px !important;        /* BIGGER BOX */
-  max-height:70vh !important;     /* responsive cap */
-  object-fit:contain !important;  /* IMPORTANT: SHOW WHOLE IMAGE */
+  height:520px !important;
+  max-height:70vh !important;
+  object-fit:contain !important;
   object-position:center !important;
   border-radius:12px !important;
   background: rgba(0,0,0,0.06) !important;
 }
 
-/* Make sure the wrapper can grow and isn’t clipping weirdly */
 #torquePhotoPreview,
 #nxTorquePhotoPreview,
 #nxTorquePhoto,
@@ -279,7 +339,6 @@ body.nx-bg .nexus-page{
   overflow: visible !important;
 }
 
-/* Case B: torque photo is rendered as a DIV with background-image */
 #torquePhotoPreview,
 #nxTorquePhotoPreview,
 #nxTorquePhoto,
@@ -293,8 +352,8 @@ body.nx-bg .nexus-page{
 .torquePhoto,
 .torque-photo-preview,
 .torquePhotoPreview{
-  background-size: contain !important;   /* IMPORTANT: SHOW WHOLE IMAGE */
+  background-size: contain !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
-  min-height: 520px !important;         /* BIGGER BOX */
+  min-height: 520px !important;
 }
