@@ -1065,7 +1065,7 @@
     </div>
 
     <div class="diagram-stage" id="diagramStage">
-      <img id="diagramModalImg" src="meg_diagram.png" alt="Meg Diagram" draggable="false" />
+      <img id="diagramModalImg" src="" alt="Meg Diagram" draggable="false" />
     </div>
   </div>
 </div>
@@ -1561,18 +1561,38 @@
   }
 
   function openDiagramModal(){
-    if (!diagramModal) return;
+    if (!diagramModal || !diagramModalImg) return;
+
+    const basePath = location.pathname.replace(/\/[^\/]*$/, "/");
+    const candidates = [
+      `${location.origin}${basePath}meg_diagram.png`,
+      `${location.origin}/HyperCore1.0/meg_diagram.png`,
+      `${location.origin}${basePath}Meg_Diagram.png`,
+      `${location.origin}${basePath}meg_diagram.PNG`
+    ];
+
+    let idx = 0;
+    diagramModalImg.onload = function(){
+      diagramScale = 1;
+      diagramTouchStartDistance = null;
+      diagramTouchStartScale = 1;
+      applyDiagramZoom();
+      if (diagramStage){
+        diagramStage.scrollTop = 0;
+        diagramStage.scrollLeft = 0;
+      }
+    };
+    diagramModalImg.onerror = function(){
+      idx += 1;
+      if (idx < candidates.length){
+        diagramModalImg.src = candidates[idx];
+      }
+    };
+
     diagramModal.classList.add("show");
     diagramModal.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
-    diagramScale = 1;
-    diagramTouchStartDistance = null;
-    diagramTouchStartScale = 1;
-    applyDiagramZoom();
-    if (diagramStage){
-      diagramStage.scrollTop = 0;
-      diagramStage.scrollLeft = 0;
-    }
+    diagramModalImg.src = candidates[idx];
   }
 
   function closeDiagramModal(){
