@@ -667,7 +667,6 @@
   }
 
 
-
   /* ===== Diagram Image Modal ===== */
   .diagram-modal{
     position:fixed;
@@ -721,6 +720,8 @@
     justify-content:center;
     padding:20px;
     cursor:grab;
+    touch-action:none;
+    -webkit-overflow-scrolling:touch;
   }
   .diagram-stage:active{
     cursor:grabbing;
@@ -731,6 +732,7 @@
     transform-origin:center center;
     user-select:none;
     -webkit-user-drag:none;
+    touch-action:none;
   }
 
 </style>
@@ -883,7 +885,7 @@
         <div class="bubble" id="referencesBubble">
           <div class="bubble-title" data-i18n="section.references">Reference &amp; Check Sheets</div>
           <div class="bubble-grid">
-            <button type="button" class="btn ref" id="transformerBtn" data-i18n="ref.diagram">Diagram Image</button>
+            <a class="btn ref" id="transformerBtn" data-i18n="ref.diagram">Diagram Image</a>
             <a class="btn ref" id="supportingBtn" data-i18n="ref.supporting">Supporting Documents</a>
           </div>
         </div>
@@ -1496,6 +1498,7 @@
       return;
     }
 
+    // Use mapped step page if available; otherwise fall back to form.html (never 404)
     const page = STEP_PAGE[s.id];
     if (page){
       el.href = directPage(page);
@@ -1511,13 +1514,8 @@
   if (constructionBtn) constructionBtn.href = directPage("construction_check_sheet.html");
 
   // Reference buttons:
+  // Diagram Image -> direct to the diagram file (no 404)
   const transformerBtn = document.getElementById("transformerBtn");
-
-  // Supporting Documents -> use form.html fallback (exists) so it cannot 404
-  const supportingBtn = document.getElementById("supportingBtn");
-  if (supportingBtn){
-    supportingBtn.href = `form.html?id=supporting${eq ? `&eq=${encodeURIComponent(eq)}` : ""}`;
-  }
 
   const diagramModal = document.getElementById("diagramModal");
   const diagramBackdrop = document.getElementById("diagramBackdrop");
@@ -1528,10 +1526,19 @@
   const diagramStage = document.getElementById("diagramStage");
   const diagramModalImg = document.getElementById("diagramModalImg");
   let diagramScale = 1;
+  let diagramTouchStartDistance = null;
+  let diagramTouchStartScale = 1;
 
   function applyDiagramZoom(){
+    if (!diagramModalImg || !diagramZoomResetBtn) return;
     diagramModalImg.style.transform = `scale(${diagramScale})`;
     diagramZoomResetBtn.textContent = `${Math.round(diagramScale * 100)}%`;
+  }
+
+  function getTouchDistance(t1, t2){
+    const dx = t2.clientX - t1.clientX;
+    const dy = t2.clientY - t1.clientY;
+    return Math.hypot(dx, dy);
   }
 
   function openDiagramModal(){
@@ -1540,9 +1547,13 @@
     diagramModal.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
     diagramScale = 1;
+    diagramTouchStartDistance = null;
+    diagramTouchStartScale = 1;
     applyDiagramZoom();
-    diagramStage.scrollTop = 0;
-    diagramStage.scrollLeft = 0;
+    if (diagramStage){
+      diagramStage.scrollTop = 0;
+      diagramStage.scrollLeft = 0;
+    }
   }
 
   function closeDiagramModal(){
@@ -1550,9 +1561,14 @@
     diagramModal.classList.remove("show");
     diagramModal.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
+    diagramTouchStartDistance = null;
+    diagramTouchStartScale = diagramScale;
   }
 
   if (transformerBtn){
+    transformerBtn.href = "#";
+    transformerBtn.removeAttribute("target");
+    transformerBtn.removeAttribute("rel");
     transformerBtn.addEventListener("click", function(e){
       e.preventDefault();
       openDiagramModal();
@@ -1608,6 +1624,44 @@
 
       applyDiagramZoom();
     }, { passive:false });
+
+    diagramStage.addEventListener("touchstart", function(e){
+      if (!diagramModal || !diagramModal.classList.contains("show")) return;
+      if (e.touches.length === 2){
+        e.preventDefault();
+        diagramTouchStartDistance = getTouchDistance(e.touches[0], e.touches[1]);
+        diagramTouchStartScale = diagramScale;
+      }
+    }, { passive:false });
+
+    diagramStage.addEventListener("touchmove", function(e){
+      if (!diagramModal || !diagramModal.classList.contains("show")) return;
+      if (e.touches.length === 2 && diagramTouchStartDistance){
+        e.preventDefault();
+        const currentDistance = getTouchDistance(e.touches[0], e.touches[1]);
+        const ratio = currentDistance / diagramTouchStartDistance;
+        diagramScale = Math.max(0.4, Math.min(diagramTouchStartScale * ratio, 5));
+        applyDiagramZoom();
+      }
+    }, { passive:false });
+
+    diagramStage.addEventListener("touchend", function(e){
+      if (!e.touches || e.touches.length < 2){
+        diagramTouchStartDistance = null;
+        diagramTouchStartScale = diagramScale;
+      }
+    }, { passive:false });
+
+    diagramStage.addEventListener("touchcancel", function(){
+      diagramTouchStartDistance = null;
+      diagramTouchStartScale = diagramScale;
+    }, { passive:false });
+  }
+
+  // Supporting Documents -> use form.html fallback (exists) so it cannot 404
+  const supportingBtn = document.getElementById("supportingBtn");
+  if (supportingBtn){
+    supportingBtn.href = `form.html?id=supporting${eq ? `&eq=${encodeURIComponent(eq)}` : ""}`;
   }
 
   const fill = document.getElementById("progressFill");
@@ -2590,6 +2644,7 @@
     </div>
   </div>
 </div>
+
 
 <script src="assets/js/nexus-core.js"></script>
 <script src="assets/js/nexus-firebase-bridge.js"></script>
