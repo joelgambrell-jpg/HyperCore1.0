@@ -1429,7 +1429,6 @@
       return;
     }
 
-    // Use mapped step page if available; otherwise fall back to form.html (never 404)
     const page = STEP_PAGE[s.id];
     if (page){
       el.href = directPage(page);
