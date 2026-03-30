@@ -666,6 +666,73 @@
     color:#fff !important;
   }
 
+
+
+  /* ===== Diagram Image Modal ===== */
+  .diagram-modal{
+    position:fixed;
+    inset:0;
+    display:none;
+    z-index:99999;
+  }
+  .diagram-modal.show{
+    display:block;
+  }
+  .diagram-backdrop{
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,0.86);
+    backdrop-filter:blur(4px);
+  }
+  .diagram-panel{
+    position:relative;
+    width:min(96vw, 1400px);
+    height:min(92vh, 900px);
+    margin:3vh auto;
+    background:rgba(10,15,36,0.98);
+    border:1px solid rgba(255,255,255,0.16);
+    border-radius:18px;
+    overflow:hidden;
+    box-shadow:0 24px 60px rgba(0,0,0,0.45);
+  }
+  .diagram-toolbar{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    padding:12px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.14);
+    background:rgba(255,255,255,0.04);
+  }
+  .diagram-tool-btn{
+    min-width:52px;
+    height:40px;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    font-size:18px;
+    font-weight:900;
+  }
+  .diagram-stage{
+    width:100%;
+    height:calc(100% - 65px);
+    overflow:auto;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    cursor:grab;
+  }
+  .diagram-stage:active{
+    cursor:grabbing;
+  }
+  #diagramModalImg{
+    max-width:none;
+    max-height:none;
+    transform-origin:center center;
+    user-select:none;
+    -webkit-user-drag:none;
+  }
+
 </style>
 
 <link rel="stylesheet" href="assets/css/nexus-core.css">
@@ -816,7 +883,7 @@
         <div class="bubble" id="referencesBubble">
           <div class="bubble-title" data-i18n="section.references">Reference &amp; Check Sheets</div>
           <div class="bubble-grid">
-            <a class="btn ref" id="transformerBtn" data-i18n="ref.diagram">Diagram Image</a>
+            <button type="button" class="btn ref" id="transformerBtn" data-i18n="ref.diagram">Diagram Image</button>
             <a class="btn ref" id="supportingBtn" data-i18n="ref.supporting">Supporting Documents</a>
           </div>
         </div>
@@ -1444,18 +1511,103 @@
   if (constructionBtn) constructionBtn.href = directPage("construction_check_sheet.html");
 
   // Reference buttons:
-  // Diagram Image -> direct to the diagram file (no 404)
   const transformerBtn = document.getElementById("transformerBtn");
-  if (transformerBtn){
-    transformerBtn.href = "meg_diagram.png";
-    transformerBtn.target = "_blank";
-    transformerBtn.rel = "noopener";
-  }
 
   // Supporting Documents -> use form.html fallback (exists) so it cannot 404
   const supportingBtn = document.getElementById("supportingBtn");
   if (supportingBtn){
     supportingBtn.href = `form.html?id=supporting${eq ? `&eq=${encodeURIComponent(eq)}` : ""}`;
+  }
+
+  const diagramModal = document.getElementById("diagramModal");
+  const diagramBackdrop = document.getElementById("diagramBackdrop");
+  const diagramCloseBtn = document.getElementById("diagramCloseBtn");
+  const diagramZoomInBtn = document.getElementById("diagramZoomInBtn");
+  const diagramZoomOutBtn = document.getElementById("diagramZoomOutBtn");
+  const diagramZoomResetBtn = document.getElementById("diagramZoomResetBtn");
+  const diagramStage = document.getElementById("diagramStage");
+  const diagramModalImg = document.getElementById("diagramModalImg");
+  let diagramScale = 1;
+
+  function applyDiagramZoom(){
+    diagramModalImg.style.transform = `scale(${diagramScale})`;
+    diagramZoomResetBtn.textContent = `${Math.round(diagramScale * 100)}%`;
+  }
+
+  function openDiagramModal(){
+    if (!diagramModal) return;
+    diagramModal.classList.add("show");
+    diagramModal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    diagramScale = 1;
+    applyDiagramZoom();
+    diagramStage.scrollTop = 0;
+    diagramStage.scrollLeft = 0;
+  }
+
+  function closeDiagramModal(){
+    if (!diagramModal) return;
+    diagramModal.classList.remove("show");
+    diagramModal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+  }
+
+  if (transformerBtn){
+    transformerBtn.addEventListener("click", function(e){
+      e.preventDefault();
+      openDiagramModal();
+    });
+  }
+
+  if (diagramCloseBtn) diagramCloseBtn.addEventListener("click", closeDiagramModal);
+  if (diagramBackdrop) diagramBackdrop.addEventListener("click", closeDiagramModal);
+
+  if (diagramZoomInBtn){
+    diagramZoomInBtn.addEventListener("click", function(){
+      diagramScale = Math.min(diagramScale + 0.2, 5);
+      applyDiagramZoom();
+    });
+  }
+
+  if (diagramZoomOutBtn){
+    diagramZoomOutBtn.addEventListener("click", function(){
+      diagramScale = Math.max(diagramScale - 0.2, 0.4);
+      applyDiagramZoom();
+    });
+  }
+
+  if (diagramZoomResetBtn){
+    diagramZoomResetBtn.addEventListener("click", function(){
+      diagramScale = 1;
+      applyDiagramZoom();
+    });
+  }
+
+  document.addEventListener("keydown", function(e){
+    if (!diagramModal || !diagramModal.classList.contains("show")) return;
+
+    if (e.key === "Escape") closeDiagramModal();
+    if (e.key === "+" || e.key === "="){
+      diagramScale = Math.min(diagramScale + 0.2, 5);
+      applyDiagramZoom();
+    }
+    if (e.key === "-"){
+      diagramScale = Math.max(diagramScale - 0.2, 0.4);
+      applyDiagramZoom();
+    }
+  });
+
+  if (diagramStage){
+    diagramStage.addEventListener("wheel", function(e){
+      if (!diagramModal || !diagramModal.classList.contains("show")) return;
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+
+      if (e.deltaY < 0) diagramScale = Math.min(diagramScale + 0.15, 5);
+      else diagramScale = Math.max(diagramScale - 0.15, 0.4);
+
+      applyDiagramZoom();
+    }, { passive:false });
   }
 
   const fill = document.getElementById("progressFill");
@@ -2420,6 +2572,24 @@
 <footer class="nx-footer">
   © 2026 NEXUS Data Science — Built for Faith Technologies Incorporated — All Rights Reserved
 </footer>
+
+
+<div id="diagramModal" class="diagram-modal" aria-hidden="true">
+  <div class="diagram-backdrop" id="diagramBackdrop"></div>
+
+  <div class="diagram-panel" role="dialog" aria-modal="true" aria-label="Diagram Image Viewer">
+    <div class="diagram-toolbar">
+      <button type="button" class="diagram-tool-btn" id="diagramZoomOutBtn">−</button>
+      <button type="button" class="diagram-tool-btn" id="diagramZoomResetBtn">100%</button>
+      <button type="button" class="diagram-tool-btn" id="diagramZoomInBtn">+</button>
+      <button type="button" class="diagram-tool-btn" id="diagramCloseBtn">✕</button>
+    </div>
+
+    <div class="diagram-stage" id="diagramStage">
+      <img id="diagramModalImg" src="meg_diagram.png" alt="Meg Diagram" draggable="false" />
+    </div>
+  </div>
+</div>
 
 <script src="assets/js/nexus-core.js"></script>
 <script src="assets/js/nexus-firebase-bridge.js"></script>
