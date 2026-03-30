@@ -1,11 +1,3 @@
-<!-- index.html (FULL DROP-IN) — Launcher page with Equipment Image upload (GitHub/localStorage)
-     ADD: Phenolic fields (color code dropdown + FED FROM + FEEDS + Phenolic Equip ID)
-     ADD: Torque Photo upload (per-equipment) -> localStorage key: nexus_${eq}_torque_photo
-     ADD: Equipment Type dropdown (CCS template selector) -> meta.equipmentType saved in nexus_meta_${eq}
-     CHANGE: Add Transformer option. Transformer will map to construction_check_sheet.html (handled in equipment.html mapping).
-     CHANGE: Add per-equipment UNLOCK control to allow editing Equipment Type even if progress exists.
-              Unlock stored as: nexus_${eq}_equipmentType_unlock = "1"
--->
 <!doctype html>
 <html lang="en">
 <head>
@@ -168,6 +160,7 @@
     border-radius:12px;
     box-shadow:0 10px 22px rgba(0,0,0,.28);
     border:1px solid rgba(255,255,255,0.18);
+    cursor:zoom-in;
   }
   .img-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
   .mini-btn{
@@ -253,6 +246,71 @@
     background:rgba(0,0,0,0.35);
     border-top:1px solid rgba(255,255,255,0.18);
     border-radius:0 0 18px 18px;
+  }
+
+  /* ===== Equipment Image Modal ===== */
+  .equip-image-modal{
+    position:fixed;
+    inset:0;
+    display:none;
+    z-index:9999;
+  }
+  .equip-image-modal.show{
+    display:block;
+  }
+  .equip-image-modal-backdrop{
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,0.86);
+    backdrop-filter:blur(4px);
+  }
+  .equip-image-modal-panel{
+    position:relative;
+    width:min(96vw, 1400px);
+    height:min(92vh, 900px);
+    margin:3vh auto;
+    background:rgba(10,15,36,0.98);
+    border:1px solid rgba(255,255,255,0.16);
+    border-radius:18px;
+    overflow:hidden;
+    box-shadow:0 24px 60px rgba(0,0,0,0.45);
+  }
+  .equip-image-modal-toolbar{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    padding:12px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.14);
+    background:rgba(255,255,255,0.04);
+  }
+  .equip-image-tool-btn{
+    min-width:52px;
+    height:40px;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    font-size:18px;
+    font-weight:900;
+  }
+  .equip-image-modal-stage{
+    width:100%;
+    height:calc(100% - 65px);
+    overflow:auto;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    cursor:grab;
+  }
+  .equip-image-modal-stage:active{
+    cursor:grabbing;
+  }
+  #equipImageModalImg{
+    max-width:none;
+    max-height:none;
+    transform-origin:center center;
+    user-select:none;
+    -webkit-user-drag:none;
   }
 </style>
 
@@ -436,6 +494,29 @@
 
     <div class="footer">
       © 2026 NEXUS Data Science — Built for Faith Technologies Incorporated — All Rights Reserved
+    </div>
+  </div>
+</div>
+
+<!-- Equipment Image Modal -->
+<div id="equipImageModal" class="equip-image-modal" aria-hidden="true">
+  <div class="equip-image-modal-backdrop" id="equipImageModalBackdrop"></div>
+
+  <div class="equip-image-modal-panel" role="dialog" aria-modal="true" aria-label="Equipment Image Viewer">
+    <div class="equip-image-modal-toolbar">
+      <button type="button" class="equip-image-tool-btn" id="equipImageZoomOutBtn">−</button>
+      <button type="button" class="equip-image-tool-btn" id="equipImageZoomResetBtn">100%</button>
+      <button type="button" class="equip-image-tool-btn" id="equipImageZoomInBtn">+</button>
+      <button type="button" class="equip-image-tool-btn" id="equipImageCloseBtn">✕</button>
+    </div>
+
+    <div class="equip-image-modal-stage" id="equipImageModalStage">
+      <img
+        id="equipImageModalImg"
+        src=""
+        alt="Equipment image enlarged preview"
+        draggable="false"
+      />
     </div>
   </div>
 </div>
@@ -662,12 +743,14 @@
     loadMetaIntoFields(eq);
     loadPreviewForCurrentEq();
     loadTorquePreviewForCurrentEq();
+    refreshEquipmentStepsLink();
   });
   eqInput.addEventListener("input", ()=>{
     const eq = getEq();
     applyEquipmentTypeLock(eq);
     loadPreviewForCurrentEq();
     loadTorquePreviewForCurrentEq();
+    refreshEquipmentStepsLink();
   });
 
   // buttons
@@ -685,7 +768,10 @@
     location.href = `qr.html?eq=${encodeURIComponent(eq)}`;
   });
 
-  equipmentStepsBtn.href = `equipment_steps.html?eq=${encodeURIComponent(getEq() || "TR-001")}`;
+  function refreshEquipmentStepsLink(){
+    equipmentStepsBtn.href = `equipment_steps.html?eq=${encodeURIComponent(getEq() || "TR-001")}`;
+  }
+  refreshEquipmentStepsLink();
 
   qrGeneratorLink.addEventListener("click", ()=> location.href = "qr.html");
   scanQrLink.addEventListener("click", ()=> location.href = "scan_qr.html");
@@ -844,6 +930,94 @@
     setTorqueStatus("Cleared torque photo for this equipment (this device).");
   });
 
+  // ===== Equipment Image Modal =====
+  const equipImageModal = document.getElementById("equipImageModal");
+  const equipImageModalBackdrop = document.getElementById("equipImageModalBackdrop");
+  const equipImageModalStage = document.getElementById("equipImageModalStage");
+  const equipImageModalImg = document.getElementById("equipImageModalImg");
+  const equipImageZoomInBtn = document.getElementById("equipImageZoomInBtn");
+  const equipImageZoomOutBtn = document.getElementById("equipImageZoomOutBtn");
+  const equipImageZoomResetBtn = document.getElementById("equipImageZoomResetBtn");
+  const equipImageCloseBtn = document.getElementById("equipImageCloseBtn");
+
+  let equipImageScale = 1;
+
+  function applyEquipImageZoom(){
+    equipImageModalImg.style.transform = `scale(${equipImageScale})`;
+    equipImageZoomResetBtn.textContent = `${Math.round(equipImageScale * 100)}%`;
+  }
+
+  function openEquipImageModal(){
+    const liveSrc = preview && preview.src ? preview.src : "";
+    if (!liveSrc) return;
+
+    equipImageModalImg.src = liveSrc;
+    equipImageModal.classList.add("show");
+    equipImageModal.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+
+    equipImageScale = 1;
+    applyEquipImageZoom();
+    equipImageModalStage.scrollTop = 0;
+    equipImageModalStage.scrollLeft = 0;
+  }
+
+  function closeEquipImageModal(){
+    equipImageModal.classList.remove("show");
+    equipImageModal.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+  }
+
+  preview.addEventListener("click", ()=>{
+    if (preview.style.display === "none" || !preview.src) return;
+    openEquipImageModal();
+  });
+
+  equipImageCloseBtn.addEventListener("click", closeEquipImageModal);
+  equipImageModalBackdrop.addEventListener("click", closeEquipImageModal);
+
+  equipImageZoomInBtn.addEventListener("click", ()=>{
+    equipImageScale = Math.min(equipImageScale + 0.2, 5);
+    applyEquipImageZoom();
+  });
+
+  equipImageZoomOutBtn.addEventListener("click", ()=>{
+    equipImageScale = Math.max(equipImageScale - 0.2, 0.4);
+    applyEquipImageZoom();
+  });
+
+  equipImageZoomResetBtn.addEventListener("click", ()=>{
+    equipImageScale = 1;
+    applyEquipImageZoom();
+  });
+
+  document.addEventListener("keydown", (e)=>{
+    if (!equipImageModal.classList.contains("show")) return;
+
+    if (e.key === "Escape") closeEquipImageModal();
+    if (e.key === "+" || e.key === "=") {
+      equipImageScale = Math.min(equipImageScale + 0.2, 5);
+      applyEquipImageZoom();
+    }
+    if (e.key === "-") {
+      equipImageScale = Math.max(equipImageScale - 0.2, 0.4);
+      applyEquipImageZoom();
+    }
+  });
+
+  equipImageModalStage.addEventListener("wheel", (e)=>{
+    if (!equipImageModal.classList.contains("show")) return;
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+
+    if (e.deltaY < 0) {
+      equipImageScale = Math.min(equipImageScale + 0.15, 5);
+    } else {
+      equipImageScale = Math.max(equipImageScale - 0.15, 0.4);
+    }
+    applyEquipImageZoom();
+  }, { passive:false });
+
   // init: if URL has eq, set it; load meta + images
   if (incomingEq){
     eqInput.value = incomingEq;
@@ -851,6 +1025,7 @@
   loadMetaIntoFields(getEq());
   loadPreviewForCurrentEq();
   loadTorquePreviewForCurrentEq();
+  refreshEquipmentStepsLink();
 })();
 </script>
 
