@@ -1560,39 +1560,69 @@
     return Math.hypot(dx, dy);
   }
 
-  function openDiagramModal(){
-    if (!diagramModal || !diagramModalImg) return;
-
-    const basePath = location.pathname.replace(/\/[^\/]*$/, "/");
-    const candidates = [
-      `${location.origin}${basePath}meg_diagram.png`,
-      `${location.origin}/HyperCore1.0/meg_diagram.png`,
-      `${location.origin}${basePath}Meg_Diagram.png`,
-      `${location.origin}${basePath}meg_diagram.PNG`
+  function resolveDiagramCandidates(){
+    const baseDir = location.pathname.replace(/[^/]*$/, "");
+    const origin = location.origin || "";
+    return [
+      `${origin}${baseDir}meg_diagram.png`,
+      `${origin}${baseDir}meg_diagram.PNG`,
+      `${origin}${baseDir}Meg_Diagram.png`,
+      `${origin}/HyperCore1.0/meg_diagram.png`,
+      `${origin}/HyperCore1.0/meg_diagram.PNG`,
+      `${origin}/HyperCore1.0/Meg_Diagram.png`,
+      "meg_diagram.png",
+      "./meg_diagram.png"
     ];
+  }
 
+  function loadDiagramImage(onReady){
+    if (!diagramModalImg) return;
+    const candidates = resolveDiagramCandidates();
     let idx = 0;
-    diagramModalImg.onload = function(){
-      diagramScale = 1;
-      diagramTouchStartDistance = null;
-      diagramTouchStartScale = 1;
-      applyDiagramZoom();
+
+    function tryNext(){
+      if (idx >= candidates.length){
+        diagramModalImg.removeAttribute("src");
+        diagramModalImg.alt = "Meg Diagram not found";
+        return;
+      }
+      const src = candidates[idx++];
+      const testImg = new Image();
+      testImg.onload = function(){
+        diagramModalImg.src = src;
+        diagramModalImg.alt = "Meg Diagram";
+        if (typeof onReady === "function") onReady();
+      };
+      testImg.onerror = tryNext;
+      testImg.src = src;
+    }
+
+    tryNext();
+  }
+
+  function openDiagramModal(){
+    if (!diagramModal) return;
+    diagramScale = 1;
+    diagramTouchStartDistance = null;
+    diagramTouchStartScale = 1;
+    applyDiagramZoom();
+    if (diagramStage){
+      diagramStage.scrollTop = 0;
+      diagramStage.scrollLeft = 0;
+    }
+
+    loadDiagramImage(function(){
       if (diagramStage){
         diagramStage.scrollTop = 0;
         diagramStage.scrollLeft = 0;
       }
-    };
-    diagramModalImg.onerror = function(){
-      idx += 1;
-      if (idx < candidates.length){
-        diagramModalImg.src = candidates[idx];
-      }
-    };
+      diagramScale = 1;
+      applyDiagramZoom();
+    });
 
     diagramModal.classList.add("show");
     diagramModal.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
-    diagramModalImg.src = candidates[idx];
   }
 
   function closeDiagramModal(){
