@@ -868,18 +868,18 @@
     const ccsComplete = ccsIsFullySignedOff(eq);
     const ccsLink = eq ? `construction_check_sheet.html?eq=${encodeURIComponent(eq)}` : 'construction_check_sheet.html';
 
-    /* ===== CORRECT PATHS (YOUR CURRENT REPO): Snap-on Import/Embed live in /torque ===== */
-    const snaponImportLink = nexusUrl(eq ? `torque/snapon_import.html?eq=${encodeURIComponent(eq)}` : `torque/snapon_import.html`);
-    const snaponEmbedLink  = nexusUrl(eq ? `torque/snapon_export_embed.html?eq=${encodeURIComponent(eq)}` : `torque/snapon_export_embed.html`);
-    const snaponSessions = (function(){
-      try{
-        const raw = localStorage.getItem("nexus.torque.sessions.v1") || "[]";
-        const arr = JSON.parse(raw);
-        if (!Array.isArray(arr)) return [];
-        if (!eq) return arr;
-        return arr.filter(s => s && typeof s === "object" && String(s.equipmentId||"").trim() === eq);
-      }catch(e){ return []; }
-    })();
+/* ===== FIXED PATHS: Snap-on Import/Embed live at ROOT (NOT /torque) ===== */
+const snaponImportLink = nexusUrl(eq ? `snapon_import.html?eq=${encodeURIComponent(eq)}` : `snapon_import.html`);
+const snaponEmbedLink  = nexusUrl(eq ? `snapon_export_embed.html?eq=${encodeURIComponent(eq)}` : `snapon_export_embed.html`);
+const snaponSessions = (function(){
+  try{
+    const raw = localStorage.getItem("nexus.torque.sessions.v1") || "[]";
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    if (!eq) return arr;
+    return arr.filter(s => s && typeof s === "object" && String(s.equipmentId||"").trim() === eq);
+  }catch(e){ return []; }
+})();
 
     /* ===== CORRECT PATHS (YOUR CURRENT REPO): Fluke Import/Embed live in /meg ===== */
     const flukeImportLink = nexusUrl(eq ? `meg/fluke_import.html?eq=${encodeURIComponent(eq)}` : `meg/fluke_import.html`);
