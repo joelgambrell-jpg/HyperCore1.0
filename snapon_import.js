@@ -2,6 +2,7 @@
 
 (function () {
   const $ = (id) => document.getElementById(id);
+
   const statusEl = $("status");
   const parseBtn = $("parseBtn");
   const saveBtn = $("saveBtn");
@@ -19,7 +20,9 @@
   const jobIdEl = $("jobId");
   const equipmentIdEl = $("equipmentId");
 
-  function setStatus(msg) { statusEl.textContent = msg || ""; }
+  function setStatus(msg) {
+    if (statusEl) statusEl.textContent = msg || "";
+  }
 
   function qs(name) {
     const u = new URL(window.location.href);
@@ -28,63 +31,103 @@
 
   // Prefill from query params commonly used in NEXUS pages
   // Supports: ?jobId=...&equipmentId=... OR ?jobId=...&eq=...
-  jobIdEl.value = qs("jobId") || "";
-  equipmentIdEl.value = qs("equipmentId") || qs("eq") || "";
+  if (jobIdEl) jobIdEl.value = qs("jobId") || "";
+  if (equipmentIdEl) equipmentIdEl.value = qs("equipmentId") || qs("eq") || "";
 
   let parsed = null; // { fileName, units, events[], summary }
 
+  function showPreview(show) {
+    if (!previewBlock) return;
+    previewBlock.style.display = show ? "block" : "none";
+  }
+
+  function showSaved(show) {
+    if (!savedBlock) return;
+    savedBlock.style.display = show ? "block" : "none";
+  }
+
   // --- CSV parsing helpers (no deps) ---
-  function guessDelimiter(sampleLine) {
+  function guessDelimiter(text) {
+    const sampleLines = String(text || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .filter((l) => l.trim().length > 0)
+      .slice(0, 5);
+
     const candidates = [",", ";", "\t", "|"];
     let best = ",";
-    let bestCount = -1;
+    let bestScore = -1;
+
     for (const c of candidates) {
-      const count = (sampleLine.match(new RegExp(`\\${c}`, "g")) || []).length;
-      if (count > bestCount) { bestCount = count; best = c; }
+      let score = 0;
+      for (const line of sampleLines) {
+        score += (line.split(c).length - 1);
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
     }
     return best;
   }
 
   function parseCsv(text) {
-    // Basic CSV parser with quotes support
-    const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.trim().length > 0);
-    if (!lines.length) return { headers: [], rows: [] };
-
-    const delimiter = guessDelimiter(lines[0]);
+    const normalized = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const delimiter = guessDelimiter(normalized);
 
     const rows = [];
-    for (const line of lines) {
-      const out = [];
-      let cur = "";
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (ch === '"') {
-          if (inQuotes && line[i + 1] === '"') { // escaped quote
-            cur += '"'; i++;
-          } else {
-            inQuotes = !inQuotes;
-          }
-        } else if (ch === delimiter && !inQuotes) {
-          out.push(cur);
-          cur = "";
+    let row = [];
+    let cur = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < normalized.length; i++) {
+      const ch = normalized[i];
+      const next = normalized[i + 1];
+
+      if (ch === '"') {
+        if (inQuotes && next === '"') {
+          cur += '"';
+          i++;
         } else {
-          cur += ch;
+          inQuotes = !inQuotes;
         }
+      } else if (ch === delimiter && !inQuotes) {
+        row.push(cur);
+        cur = "";
+      } else if (ch === "\n" && !inQuotes) {
+        row.push(cur);
+        rows.push(row);
+        row = [];
+        cur = "";
+      } else {
+        cur += ch;
       }
-      out.push(cur);
-      rows.push(out.map(s => s.trim()));
     }
 
-    const headers = rows[0];
-    const dataRows = rows.slice(1).filter(r => r.some(x => String(x).trim() !== ""));
-    const objects = dataRows.map(r => {
+    if (cur.length > 0 || row.length > 0) {
+      row.push(cur);
+      rows.push(row);
+    }
+
+    const cleanedRows = rows
+      .map((r) => r.map((s) => String(s ?? "").trim()))
+      .filter((r) => r.some((x) => String(x).trim() !== ""));
+
+    if (!cleanedRows.length) return { headers: [], rows: [] };
+
+    const headers = cleanedRows[0];
+    const dataRows = cleanedRows.slice(1).filter((r) => r.some((x) => String(x).trim() !== ""));
+
+    const objects = dataRows.map((r) => {
       const obj = {};
-      for (let i = 0; i < headers.length; i++) obj[headers[i]] = r[i] ?? "";
+      for (let i = 0; i < headers.length; i++) {
+        obj[headers[i]] = r[i] ?? "";
+      }
       return obj;
     });
 
-    return { headers, rows: objects };
+    return { headers, rows: objects, delimiter };
   }
 
   function normHeader(h) {
@@ -92,30 +135,106 @@
       .toLowerCase()
       .trim()
       .replace(/[\u2013\u2014]/g, "-")
+      .replace(/[%#()]/g, " ")
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
   }
 
   const SYN = {
-    timestamp: ["time", "timestamp", "date", "datetime", "recorded at"],
-    actualTorque: ["actual torque", "torque", "measured torque", "result", "value"],
-    targetTorque: ["target torque", "target", "setpoint", "spec", "nominal"],
-    angle: ["angle", "degrees", "deg"],
-    passFail: ["status", "pass/fail", "pass fail", "ok", "result status", "judgement", "judgment"],
-    units: ["units", "unit"],
-    toolSerial: ["tool serial", "serial", "tool id", "id"],
-    toolModel: ["tool model", "model"],
+    timestamp: [
+      "time",
+      "timestamp",
+      "date",
+      "datetime",
+      "recorded at",
+      "event time",
+      "event date",
+      "date time",
+      "completed time",
+      "run time"
+    ],
+    actualTorque: [
+      "actual torque",
+      "torque",
+      "measured torque",
+      "final torque",
+      "torque result",
+      "torque reading",
+      "actual"
+    ],
+    targetTorque: [
+      "target torque",
+      "target",
+      "setpoint",
+      "spec",
+      "nominal",
+      "target value",
+      "programmed torque",
+      "torque target"
+    ],
+    angle: [
+      "angle",
+      "degrees",
+      "deg",
+      "angle degrees",
+      "final angle"
+    ],
+    passFail: [
+      "status",
+      "pass/fail",
+      "pass fail",
+      "ok",
+      "result status",
+      "judgement",
+      "judgment",
+      "result",
+      "final status",
+      "evaluation"
+    ],
+    units: [
+      "units",
+      "unit",
+      "torque units",
+      "measurement units"
+    ],
+    toolSerial: [
+      "tool serial",
+      "serial",
+      "tool id",
+      "id",
+      "serial number",
+      "tool serial number",
+      "controller id"
+    ],
+    toolModel: [
+      "tool model",
+      "model",
+      "tool type",
+      "device model"
+    ]
   };
 
   function findKey(headers, wantedList) {
-    const n = headers.map(h => ({ raw: h, n: normHeader(h) }));
+    const n = headers.map((h) => ({ raw: h, n: normHeader(h) }));
+
     for (const wanted of wantedList) {
       const w = normHeader(wanted);
-      const exact = n.find(x => x.n === w);
+      const exact = n.find((x) => x.n === w);
       if (exact) return exact.raw;
-      const partial = n.find(x => x.n.includes(w));
+    }
+
+    for (const wanted of wantedList) {
+      const w = normHeader(wanted);
+      const starts = n.find((x) => x.n.startsWith(w));
+      if (starts) return starts.raw;
+    }
+
+    for (const wanted of wantedList) {
+      const w = normHeader(wanted);
+      const partial = n.find((x) => x.n.includes(w) || w.includes(x.n));
       if (partial) return partial.raw;
     }
+
     return null;
   }
 
@@ -130,31 +249,81 @@
   function pf(x) {
     const v = String(x ?? "").trim().toLowerCase();
     if (!v) return "UNKNOWN";
-    if (["pass", "ok", "good", "true", "1", "p"].includes(v)) return "PASS";
-    if (["fail", "ng", "bad", "false", "0", "f"].includes(v)) return "FAIL";
+    if (["pass", "ok", "good", "true", "1", "p", "accept", "accepted"].includes(v)) return "PASS";
+    if (["fail", "ng", "bad", "false", "0", "f", "reject", "rejected"].includes(v)) return "FAIL";
     return "UNKNOWN";
   }
 
+  function inferPassFail(row, kPF, kAct, kTgt) {
+    if (kPF) {
+      const direct = pf(row[kPF]);
+      if (direct !== "UNKNOWN") return direct;
+    }
+
+    const act = kAct ? numLoose(row[kAct]) : undefined;
+    const tgt = kTgt ? numLoose(row[kTgt]) : undefined;
+
+    if (typeof act === "number" && typeof tgt === "number") {
+      return act >= tgt ? "PASS" : "FAIL";
+    }
+
+    return "UNKNOWN";
+  }
+
+  function inferUnits(rows, kUnits, kAct, headers) {
+    if (kUnits) {
+      for (const r of rows) {
+        const v = String(r[kUnits] || "").trim();
+        if (v) return v;
+      }
+    }
+
+    const joinedHeaders = headers.map(normHeader).join(" | ");
+    if (joinedHeaders.includes("ft lb") || joinedHeaders.includes("foot pound")) return "ft-lb";
+    if (joinedHeaders.includes("in lb") || joinedHeaders.includes("inch pound")) return "in-lb";
+    if (joinedHeaders.includes("nm") || joinedHeaders.includes("n m")) return "N·m";
+
+    if (kAct) {
+      for (const r of rows) {
+        const raw = String(r[kAct] || "");
+        if (/ft-?lb|foot/i.test(raw)) return "ft-lb";
+        if (/in-?lb|inch/i.test(raw)) return "in-lb";
+        if (/n[.\s·-]?m/i.test(raw)) return "N·m";
+      }
+    }
+
+    return undefined;
+  }
+
   function renderPreview(events) {
+    if (!previewTable) return;
+
     const cols = ["timestamp", "actualTorque", "targetTorque", "angle", "units", "passFail"];
-    const head = `<tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
-    const body = events.slice(0, 12).map(e =>
-      `<tr>${cols.map(c => `<td>${e[c] ?? ""}</td>`).join("")}</tr>`
-    ).join("");
+    const head = `<thead><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr></thead>`;
+    const body = `<tbody>${
+      events.slice(0, 25).map((e) =>
+        `<tr>${cols.map((c) => `<td>${e[c] ?? ""}</td>`).join("")}</tr>`
+      ).join("")
+    }</tbody>`;
+
     previewTable.innerHTML = head + body;
   }
 
   function renderSavedList(jobId, equipmentId) {
     const listEl = $("sessionList");
+    if (!listEl || !window.NEXUS_SNAPON_STORE || typeof window.NEXUS_SNAPON_STORE.listSessions !== "function") {
+      return;
+    }
+
     const sessions = window.NEXUS_SNAPON_STORE.listSessions(jobId, equipmentId);
 
     if (!sessions.length) {
       listEl.innerHTML = `<div class="item"><div class="itemTitle">No sessions saved yet.</div></div>`;
-      savedBlock.classList.remove("hidden");
+      showSaved(true);
       return;
     }
 
-    listEl.innerHTML = sessions.map(s => {
+    listEl.innerHTML = sessions.map((s) => {
       const title = `${s.source} • ${s.eventCount} events • ${s.passCount} pass / ${s.failCount} fail`;
       const sub = `${s.sourceFileName} • capturedAt ${s.capturedAt}`;
       return `
@@ -170,7 +339,7 @@
       `;
     }).join("");
 
-    savedBlock.classList.remove("hidden");
+    showSaved(true);
   }
 
   async function readFileAsText(file) {
@@ -182,25 +351,58 @@
     });
   }
 
+  function validateRequiredEls() {
+    const missing = [];
+    if (!statusEl) missing.push("status");
+    if (!parseBtn) missing.push("parseBtn");
+    if (!saveBtn) missing.push("saveBtn");
+    if (!fileEl) missing.push("file");
+    if (!previewBlock) missing.push("previewBlock");
+    if (!savedBlock) missing.push("savedBlock");
+    if (!previewTable) missing.push("previewTable");
+    if (!pillEvents) missing.push("pillEvents");
+    if (!pillPass) missing.push("pillPass");
+    if (!pillFail) missing.push("pillFail");
+    if (!pillUnits) missing.push("pillUnits");
+    if (!jobIdEl) missing.push("jobId");
+    if (!equipmentIdEl) missing.push("equipmentId");
+    return missing;
+  }
+
+  const missingEls = validateRequiredEls();
+  if (missingEls.length) {
+    console.error("Snap-on import missing required elements:", missingEls);
+    setStatus(`Page is missing required elements: ${missingEls.join(", ")}`);
+    return;
+  }
+
   parseBtn.addEventListener("click", async () => {
     setStatus("");
-    previewBlock.classList.add("hidden");
+    showPreview(false);
     saveBtn.disabled = true;
     parsed = null;
 
     const jobId = jobIdEl.value.trim();
     const equipmentId = equipmentIdEl.value.trim();
-    if (!jobId || !equipmentId) return setStatus("Job ID and Equipment ID are required.");
+
+    if (!jobId || !equipmentId) {
+      return setStatus("Job ID and Equipment ID are required.");
+    }
 
     const file = fileEl.files && fileEl.files[0];
-    if (!file) return setStatus("Choose a CSV exported from ConnecTorq.");
+    if (!file) {
+      return setStatus("Choose a CSV exported from ConnecTorq.");
+    }
 
     setStatus("Parsing…");
 
     try {
       const text = await readFileAsText(file);
-      const { headers, rows } = parseCsv(text);
-      if (!headers.length || !rows.length) return setStatus("CSV appears empty or unreadable.");
+      const { headers, rows, delimiter } = parseCsv(text);
+
+      if (!headers.length || !rows.length) {
+        return setStatus("CSV appears empty or unreadable.");
+      }
 
       const kTs = findKey(headers, SYN.timestamp);
       const kAct = findKey(headers, SYN.actualTorque);
@@ -211,27 +413,53 @@
       const kSerial = findKey(headers, SYN.toolSerial);
       const kModel = findKey(headers, SYN.toolModel);
 
-      const first = rows[0] || {};
-      const units = (kUnits ? String(first[kUnits] || "").trim() : "") || undefined;
-      const toolSerial = (kSerial ? String(first[kSerial] || "").trim() : "") || undefined;
-      const toolModel = (kModel ? String(first[kModel] || "").trim() : "") || undefined;
+      if (!kAct) {
+        return setStatus(`Could not find a torque column in the file. Headers found: ${headers.join(" | ")}`);
+      }
 
-      const events = rows.map(r => ({
-        timestamp: kTs ? String(r[kTs] || "").trim() || undefined : undefined,
-        actualTorque: kAct ? numLoose(r[kAct]) : undefined,
-        targetTorque: kTgt ? numLoose(r[kTgt]) : undefined,
-        angle: kAng ? numLoose(r[kAng]) : undefined,
-        units: (kUnits ? String(r[kUnits] || "").trim() : "") || units,
-        passFail: kPF ? pf(r[kPF]) : "UNKNOWN",
-        raw: r
-      }));
+      const units = inferUnits(rows, kUnits, kAct, headers);
 
-      const passCount = events.filter(e => e.passFail === "PASS").length;
-      const failCount = events.filter(e => e.passFail === "FAIL").length;
+      let toolSerial;
+      if (kSerial) {
+        const firstWithSerial = rows.find((r) => String(r[kSerial] || "").trim());
+        toolSerial = firstWithSerial ? String(firstWithSerial[kSerial] || "").trim() : undefined;
+      }
 
-      // capturedAt: first timestamp if parseable; else now
+      let toolModel;
+      if (kModel) {
+        const firstWithModel = rows.find((r) => String(r[kModel] || "").trim());
+        toolModel = firstWithModel ? String(firstWithModel[kModel] || "").trim() : undefined;
+      }
+
+      const events = rows
+        .map((r) => ({
+          timestamp: kTs ? String(r[kTs] || "").trim() || undefined : undefined,
+          actualTorque: kAct ? numLoose(r[kAct]) : undefined,
+          targetTorque: kTgt ? numLoose(r[kTgt]) : undefined,
+          angle: kAng ? numLoose(r[kAng]) : undefined,
+          units: (kUnits ? String(r[kUnits] || "").trim() : "") || units,
+          passFail: inferPassFail(r, kPF, kAct, kTgt),
+          raw: r
+        }))
+        .filter((e) => {
+          return (
+            e.timestamp !== undefined ||
+            e.actualTorque !== undefined ||
+            e.targetTorque !== undefined ||
+            e.angle !== undefined ||
+            e.passFail !== "UNKNOWN"
+          );
+        });
+
+      if (!events.length) {
+        return setStatus(`No usable event rows were detected. Headers found: ${headers.join(" | ")}`);
+      }
+
+      const passCount = events.filter((e) => e.passFail === "PASS").length;
+      const failCount = events.filter((e) => e.passFail === "FAIL").length;
+
       let capturedAt = new Date().toISOString();
-      const ts0 = events.find(e => e.timestamp)?.timestamp;
+      const ts0 = events.find((e) => e.timestamp)?.timestamp;
       if (ts0) {
         const d = new Date(ts0);
         if (!isNaN(d.getTime())) capturedAt = d.toISOString();
@@ -239,10 +467,12 @@
 
       parsed = {
         fileName: file.name,
+        delimiter,
         units,
         toolSerial,
         toolModel,
         capturedAt,
+        headers,
         events,
         eventCount: events.length,
         passCount,
@@ -254,16 +484,21 @@
       pillFail.textContent = `fail: ${failCount}`;
       pillUnits.textContent = `units: ${units || "—"}`;
 
-      metaLine.textContent =
-        `${file.name} • ${toolModel ? toolModel + " • " : ""}${toolSerial ? toolSerial + " • " : ""}capturedAt ${capturedAt}`;
+      if (metaLine) {
+        metaLine.textContent =
+          `${file.name} • delimiter ${delimiter} • ${
+            toolModel ? toolModel + " • " : ""
+          }${toolSerial ? toolSerial + " • " : ""}capturedAt ${capturedAt}`;
+      }
 
       renderPreview(events);
-      previewBlock.classList.remove("hidden");
+      showPreview(true);
       saveBtn.disabled = false;
       setStatus("Preview ready. Save to store in NEXUS.");
 
       renderSavedList(jobId, equipmentId);
     } catch (e) {
+      console.error("Snap-on parse failed:", e);
       setStatus(`Parse failed: ${e.message || e}`);
     }
   });
@@ -271,10 +506,19 @@
   saveBtn.addEventListener("click", () => {
     const jobId = jobIdEl.value.trim();
     const equipmentId = equipmentIdEl.value.trim();
-    if (!parsed) return setStatus("Nothing parsed yet.");
+
+    if (!parsed) {
+      return setStatus("Nothing parsed yet.");
+    }
+
+    if (!window.NEXUS_SNAPON_STORE || typeof window.NEXUS_SNAPON_STORE.upsertSession !== "function") {
+      return setStatus("Snap-on storage module is unavailable.");
+    }
 
     const session = {
-      id: window.NEXUS_SNAPON_STORE.uuid(),
+      id: typeof window.NEXUS_SNAPON_STORE.uuid === "function"
+        ? window.NEXUS_SNAPON_STORE.uuid()
+        : `snapon_${Date.now()}`,
       jobId,
       equipmentId,
       source: "SNAPON_CONNECTORQ",
@@ -287,7 +531,8 @@
       passCount: parsed.passCount,
       failCount: parsed.failCount,
       createdAt: new Date().toISOString(),
-      events: parsed.events, // stored for later export/reporting
+      headers: parsed.headers,
+      events: parsed.events
     };
 
     window.NEXUS_SNAPON_STORE.upsertSession(session);
@@ -296,7 +541,6 @@
     saveBtn.disabled = true;
   });
 
-  // Initial saved list, if job/equipment prefilled
   (function init() {
     const jobId = jobIdEl.value.trim();
     const equipmentId = equipmentIdEl.value.trim();
