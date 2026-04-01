@@ -1,4 +1,4 @@
-/* meg/fluke_import.js (FULL DROP-IN)
+/* meg/fluke_import.js
    Format-flexible CSV importer:
    - Reads CSV
    - Detects headers + guesses mapping
