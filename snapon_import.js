@@ -29,12 +29,10 @@
     return u.searchParams.get(name);
   }
 
-  // Prefill from query params commonly used in NEXUS pages
-  // Supports: ?jobId=...&equipmentId=... OR ?jobId=...&eq=...
   if (jobIdEl) jobIdEl.value = qs("jobId") || "";
   if (equipmentIdEl) equipmentIdEl.value = qs("equipmentId") || qs("eq") || "";
 
-  let parsed = null; // { fileName, units, events[], summary }
+  let parsed = null;
 
   function showPreview(show) {
     if (!previewBlock) return;
@@ -46,7 +44,6 @@
     savedBlock.style.display = show ? "block" : "none";
   }
 
-  // --- CSV parsing helpers (no deps) ---
   function guessDelimiter(text) {
     const sampleLines = String(text || "")
       .replace(/\r\n/g, "\n")
@@ -114,7 +111,7 @@
       .map((r) => r.map((s) => String(s ?? "").trim()))
       .filter((r) => r.some((x) => String(x).trim() !== ""));
 
-    if (!cleanedRows.length) return { headers: [], rows: [] };
+    if (!cleanedRows.length) return { headers: [], rows: [], delimiter };
 
     const headers = cleanedRows[0];
     const dataRows = cleanedRows.slice(1).filter((r) => r.some((x) => String(x).trim() !== ""));
@@ -141,77 +138,14 @@
   }
 
   const SYN = {
-    timestamp: [
-      "time",
-      "timestamp",
-      "date",
-      "datetime",
-      "recorded at",
-      "event time",
-      "event date",
-      "date time",
-      "completed time",
-      "run time"
-    ],
-    actualTorque: [
-      "actual torque",
-      "torque",
-      "measured torque",
-      "final torque",
-      "torque result",
-      "torque reading",
-      "actual"
-    ],
-    targetTorque: [
-      "target torque",
-      "target",
-      "setpoint",
-      "spec",
-      "nominal",
-      "target value",
-      "programmed torque",
-      "torque target"
-    ],
-    angle: [
-      "angle",
-      "degrees",
-      "deg",
-      "angle degrees",
-      "final angle"
-    ],
-    passFail: [
-      "status",
-      "pass/fail",
-      "pass fail",
-      "ok",
-      "result status",
-      "judgement",
-      "judgment",
-      "result",
-      "final status",
-      "evaluation"
-    ],
-    units: [
-      "units",
-      "unit",
-      "torque units",
-      "measurement units"
-    ],
-    toolSerial: [
-      "tool serial",
-      "serial",
-      "tool id",
-      "id",
-      "serial number",
-      "tool serial number",
-      "controller id"
-    ],
-    toolModel: [
-      "tool model",
-      "model",
-      "tool type",
-      "device model"
-    ]
+    timestamp: ["time", "timestamp", "date", "datetime", "recorded at", "event time", "date time"],
+    actualTorque: ["actual torque", "torque", "measured torque", "final torque", "torque reading", "actual"],
+    targetTorque: ["target torque", "target", "setpoint", "spec", "nominal", "programmed torque"],
+    angle: ["angle", "degrees", "deg", "angle degrees", "final angle"],
+    passFail: ["status", "pass/fail", "pass fail", "ok", "result status", "judgement", "judgment", "result"],
+    units: ["units", "unit", "torque units", "measurement units"],
+    toolSerial: ["tool serial", "serial", "tool id", "id", "serial number", "tool serial number"],
+    toolModel: ["tool model", "model", "tool type", "device model"]
   };
 
   function findKey(headers, wantedList) {
@@ -325,7 +259,7 @@
 
     listEl.innerHTML = sessions.map((s) => {
       const title = `${s.source} • ${s.eventCount} events • ${s.passCount} pass / ${s.failCount} fail`;
-      const sub = `${s.sourceFileName} • capturedAt ${s.capturedAt}`;
+      const sub = `${s.sourceFileName || "(manual)"} • capturedAt ${s.capturedAt || s.createdAt || ""}`;
       return `
         <div class="item">
           <div class="itemTop">
@@ -340,6 +274,41 @@
     }).join("");
 
     showSaved(true);
+  }
+
+  function populateFromSession(session) {
+    if (!session) return;
+
+    parsed = {
+      fileName: session.sourceFileName || "",
+      delimiter: session.delimiter || ",",
+      units: session.units,
+      toolSerial: session.toolSerial,
+      toolModel: session.toolModel,
+      capturedAt: session.capturedAt || session.createdAt || new Date().toISOString(),
+      headers: session.headers || [],
+      events: Array.isArray(session.events) ? session.events : [],
+      eventCount: typeof session.eventCount === "number" ? session.eventCount : (session.events || []).length,
+      passCount: typeof session.passCount === "number" ? session.passCount : 0,
+      failCount: typeof session.failCount === "number" ? session.failCount : 0
+    };
+
+    if (pillEvents) pillEvents.textContent = `events: ${parsed.eventCount}`;
+    if (pillPass) pillPass.textContent = `pass: ${parsed.passCount}`;
+    if (pillFail) pillFail.textContent = `fail: ${parsed.failCount}`;
+    if (pillUnits) pillUnits.textContent = `units: ${parsed.units || "—"}`;
+
+    if (metaLine) {
+      metaLine.textContent =
+        `${parsed.fileName || "(saved session)"} • ${
+          parsed.toolModel ? parsed.toolModel + " • " : ""
+        }${parsed.toolSerial ? parsed.toolSerial + " • " : ""}capturedAt ${parsed.capturedAt}`;
+    }
+
+    renderPreview(parsed.events || []);
+    showPreview(true);
+    saveBtn.disabled = false;
+    setStatus("Loaded latest saved session from local storage.");
   }
 
   async function readFileAsText(file) {
@@ -516,9 +485,9 @@
     }
 
     const session = {
-      id: typeof window.NEXUS_SNAPON_STORE.uuid === "function"
+      id: (parsed && parsed.id) || (typeof window.NEXUS_SNAPON_STORE.uuid === "function"
         ? window.NEXUS_SNAPON_STORE.uuid()
-        : `snapon_${Date.now()}`,
+        : `snapon_${Date.now()}`),
       jobId,
       equipmentId,
       source: "SNAPON_CONNECTORQ",
@@ -530,20 +499,31 @@
       eventCount: parsed.eventCount,
       passCount: parsed.passCount,
       failCount: parsed.failCount,
-      createdAt: new Date().toISOString(),
+      createdAt: parsed.createdAt || new Date().toISOString(),
       headers: parsed.headers,
       events: parsed.events
     };
 
-    window.NEXUS_SNAPON_STORE.upsertSession(session);
-    setStatus("Saved to NEXUS (localStorage).");
+    const saved = window.NEXUS_SNAPON_STORE.upsertSession(session);
+    populateFromSession(saved);
     renderSavedList(jobId, equipmentId);
     saveBtn.disabled = true;
+    setStatus("Saved to NEXUS (localStorage).");
   });
 
   (function init() {
     const jobId = jobIdEl.value.trim();
     const equipmentId = equipmentIdEl.value.trim();
-    if (jobId && equipmentId) renderSavedList(jobId, equipmentId);
+
+    if (jobId && equipmentId) {
+      renderSavedList(jobId, equipmentId);
+
+      if (window.NEXUS_SNAPON_STORE && typeof window.NEXUS_SNAPON_STORE.getLatestSession === "function") {
+        const latest = window.NEXUS_SNAPON_STORE.getLatestSession(jobId, equipmentId);
+        if (latest) {
+          populateFromSession(latest);
+        }
+      }
+    }
   })();
 })();
