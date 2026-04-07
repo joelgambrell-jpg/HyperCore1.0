@@ -244,8 +244,40 @@
     margin-top:10px;
     border:1px solid rgba(0,0,0,0.12);
     border-radius:14px;
-    overflow:hidden;
+    overflow:visible;
     background:#fff;
+  }
+
+  .embed-shell iframe{
+    display:block;
+    width:100%;
+    border:0;
+    min-height:0 !important;
+    height:auto !important;
+    overflow:visible !important;
+  }
+
+  .report .table-wrap,
+  .report .wrap-table,
+  .report .scroll-x,
+  .report .scroll-y{
+    overflow:visible !important;
+    max-height:none !important;
+    height:auto !important;
+  }
+
+  .report table{
+    width:100% !important;
+    min-width:0 !important;
+    table-layout:auto !important;
+  }
+
+  .report th,
+  .report td{
+    white-space:normal !important;
+    word-break:break-word !important;
+    overflow-wrap:anywhere !important;
+    vertical-align:top;
   }
 
   .nx-footer{
