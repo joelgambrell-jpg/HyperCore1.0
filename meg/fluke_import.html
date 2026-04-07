@@ -19,6 +19,8 @@
   --accent:#00c2ff;
 }
 
+*{ box-sizing:border-box; }
+
 body{
   margin:0;
   padding:0;
@@ -254,7 +256,6 @@ hr{
   white-space:normal;
 }
 
-/* ===== Font standardization override (ADDED ONLY) ===== */
 body{font-family:Arial,Helvetica,sans-serif !important;}
 .btn-pill,.back,.pill,h1,.sub,input,select,textarea,button{font-family:inherit !important;}
 </style>
@@ -309,8 +310,8 @@ body{font-family:Arial,Helvetica,sans-serif !important;}
 
   <h1>Fluke Connect Import</h1>
   <div class="sub">
-    Goal: same pattern as Snap-on ConnecTorq — export a file from the vendor app, then import here to store structured readings and include them in Package Export.<br>
-    This importer is format-flexible (works even before you own the meter). When you get the device, export a CSV from Fluke Connect and import it here.
+    Import a Fluke CSV and save the results locally for Package Export. This version is simplified on purpose:
+    no manual column mapping, no extra question flow, and no blocked save because of optional fields.
   </div>
 
   <div class="grid">
@@ -328,82 +329,47 @@ body{font-family:Arial,Helvetica,sans-serif !important;}
     <label>Fluke Export File (CSV)</label>
     <input id="file" type="file" accept=".csv,text/csv,text/plain" />
     <div class="small" style="margin-top:8px;">
-      If Fluke Connect provides PDF as well, keep using PDF for record attachments, but use CSV for data import.
+      Expected simple column order:
+      timestamp, voltage, resistance, units, pi, dar, passFail, notes
     </div>
   </div>
 
   <div class="btn-row">
     <button class="btn-pill" id="parseBtn" type="button">Parse &amp; Preview</button>
     <button class="btn-pill primary" id="saveBtn" type="button" disabled>Save to NEXUS</button>
-    <button class="btn-pill" id="clearMapBtn" type="button">Reset Column Mapping</button>
+    <button class="btn-pill" id="clearBtn" type="button">Clear Preview</button>
   </div>
 
   <div id="status"></div>
 
-  <div id="mappingBlock" class="glass-block" style="display:none;">
-    <div class="section-title">Column Mapping (only needed if auto-detect fails)</div>
-    <div class="small">
-      Select which CSV columns correspond to these normalized fields. This mapping is saved locally and reused for future imports.
-    </div>
-
-    <hr>
-
-    <div class="grid">
-      <div class="field">
-        <label>Timestamp column</label>
-        <select id="map_timestamp"></select>
-      </div>
-      <div class="field">
-        <label>Test Voltage column (expect 1000V)</label>
-        <select id="map_voltage"></select>
-      </div>
-
-      <div class="field">
-        <label>Insulation Resistance column</label>
-        <select id="map_resistance"></select>
-      </div>
-      <div class="field">
-        <label>Resistance Units column (optional)</label>
-        <select id="map_units"></select>
-      </div>
-
-      <div class="field">
-        <label>PI column (optional)</label>
-        <select id="map_pi"></select>
-      </div>
-      <div class="field">
-        <label>DAR column (optional)</label>
-        <select id="map_dar"></select>
-      </div>
-
-      <div class="field">
-        <label>Pass/Fail column (optional)</label>
-        <select id="map_passFail"></select>
-      </div>
-      <div class="field">
-        <label>Notes/Comments column (optional)</label>
-        <select id="map_notes"></select>
-      </div>
-    </div>
-
-    <div class="small" style="margin-top:10px;">
-      If your CSV doesn’t include PI/DAR, leave them blank.
-    </div>
-  </div>
-
   <div id="previewBlock" class="glass-block" style="display:none;">
     <div class="section-title">Preview</div>
-
     <div class="small wrap-anywhere" id="previewMeta"></div>
 
     <div class="table-wrap" style="margin-top:10px;">
-      <table id="previewTable"></table>
+      <table id="previewTable">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Voltage</th>
+            <th>Resistance</th>
+            <th>Units</th>
+            <th>PI</th>
+            <th>DAR</th>
+            <th>Pass/Fail</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
   </div>
 
   <div id="savedBlock" class="glass-block" style="display:none;">
     <div class="section-title">Saved Sessions</div>
-    <div class="small">Stored locally for now (Firebase-ready hook included). Key: <span class="mono">nexus.meg.fluke.sessions.v1</span></div>
+    <div class="small">
+      Stored locally. Key: <span class="mono">nexus.meg.fluke.sessions.v1</span>
+    </div>
     <div id="sessionList" style="margin-top:10px;"></div>
   </div>
 </div>
@@ -429,13 +395,14 @@ body{font-family:Arial,Helvetica,sans-serif !important;}
     var eq = (p.get("eq") || p.get("equipmentId") || "").trim();
     var building = (p.get("building") || p.get("job") || p.get("jobId") || "").trim();
 
-    // Prefer the same Setup source other pages use: nexus_meta_{eq}.building
     function readMeta(eq){
       try{
         if(!eq) return {};
-        var raw = localStorage.getItem(`nexus_meta_${eq}`) || "";
+        var raw = localStorage.getItem("nexus_meta_" + eq) || "";
         return raw ? JSON.parse(raw) : {};
-      }catch(e){ return {}; }
+      }catch(e){
+        return {};
+      }
     }
 
     if (!building){
@@ -445,16 +412,19 @@ body{font-family:Arial,Helvetica,sans-serif !important;}
       eq = (localStorage.getItem("nexus_active_eq") || "").trim();
     }
 
-    // If building still missing and we have eq, pull from Setup meta.
     if (!building && eq){
       var meta = readMeta(eq);
       var b = (meta.building || meta.job || meta.jobId || "").toString().trim();
       if (b) building = b;
     }
 
-    // Back-compat: keep legacy "active" keys updated for other pages/tools.
     if (eq) localStorage.setItem("nexus_active_eq", eq);
     if (building) localStorage.setItem("nexus_active_building", building);
+
+    var equipmentEl = document.getElementById("equipmentId");
+    var jobEl = document.getElementById("jobId");
+    if (equipmentEl && eq) equipmentEl.value = eq;
+    if (jobEl && building) jobEl.value = building;
 
     var changed = false;
     if (building && !p.get("jobId")){ p.set("jobId", building); changed = true; }
@@ -466,11 +436,305 @@ body{font-family:Arial,Helvetica,sans-serif !important;}
 })();
 </script>
 
-<script src="fluke_store.js"></script>
-<script src="fluke_import.js"></script>
-
 <script>
 (function(){
+  var STORAGE_KEY = "nexus.meg.fluke.sessions.v1";
+  var parsedRows = [];
+
+  function qs(name){
+    try{
+      return new URLSearchParams(location.search).get(name) || "";
+    }catch(e){
+      return "";
+    }
+  }
+
+  function escapeHtml(v){
+    return String(v == null ? "" : v)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function setStatus(msg, isError){
+    var el = document.getElementById("status");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.style.color = isError ? "#ffd4d4" : "#ffffff";
+  }
+
+  function parseCsvLine(line){
+    var result = [];
+    var current = "";
+    var inQuotes = false;
+
+    for (var i = 0; i < line.length; i++){
+      var ch = line[i];
+      var next = line[i + 1];
+
+      if (ch === '"'){
+        if (inQuotes && next === '"'){
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === "," && !inQuotes){
+        result.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+
+    result.push(current);
+    return result.map(function(v){ return (v || "").trim(); });
+  }
+
+  function normalizeCell(v){
+    return (v || "").replace(/^"(.*)"$/,'$1').trim();
+  }
+
+  function buildRow(cols){
+    return {
+      timestamp: normalizeCell(cols[0] || ""),
+      voltage: normalizeCell(cols[1] || ""),
+      resistance: normalizeCell(cols[2] || ""),
+      units: normalizeCell(cols[3] || "MΩ"),
+      pi: normalizeCell(cols[4] || ""),
+      dar: normalizeCell(cols[5] || ""),
+      passFail: normalizeCell(cols[6] || ""),
+      notes: normalizeCell(cols[7] || "")
+    };
+  }
+
+  function renderPreview(rows, fileName){
+    var block = document.getElementById("previewBlock");
+    var meta = document.getElementById("previewMeta");
+    var tbody = document.querySelector("#previewTable tbody");
+
+    if (!block || !meta || !tbody) return;
+
+    var eq =
+      document.getElementById("equipmentId").value.trim() ||
+      qs("eq") ||
+      qs("equipmentId") ||
+      localStorage.getItem("nexus_active_eq") ||
+      "";
+
+    var building =
+      document.getElementById("jobId").value.trim() ||
+      qs("jobId") ||
+      qs("building") ||
+      qs("job") ||
+      localStorage.getItem("nexus_active_building") ||
+      "";
+
+    meta.innerHTML =
+      "<strong>File:</strong> " + escapeHtml(fileName || "") +
+      " &nbsp; | &nbsp; <strong>Equipment:</strong> " + escapeHtml(eq || "(none)") +
+      " &nbsp; | &nbsp; <strong>Building:</strong> " + escapeHtml(building || "(none)") +
+      " &nbsp; | &nbsp; <strong>Rows:</strong> " + escapeHtml(rows.length);
+
+    tbody.innerHTML = rows.map(function(r){
+      return [
+        "<tr>",
+          "<td>", escapeHtml(r.timestamp), "</td>",
+          "<td>", escapeHtml(r.voltage), "</td>",
+          "<td>", escapeHtml(r.resistance), "</td>",
+          "<td>", escapeHtml(r.units), "</td>",
+          "<td>", escapeHtml(r.pi), "</td>",
+          "<td>", escapeHtml(r.dar), "</td>",
+          "<td>", escapeHtml(r.passFail), "</td>",
+          "<td>", escapeHtml(r.notes), "</td>",
+        "</tr>"
+      ].join("");
+    }).join("");
+
+    block.style.display = "block";
+  }
+
+  function readSessions(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY) || "[]";
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }catch(e){
+      return [];
+    }
+  }
+
+  function writeSessions(sessions){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    try{
+      if (window.NEXUS_FirebaseBridge && typeof window.NEXUS_FirebaseBridge.write === "function"){
+        window.NEXUS_FirebaseBridge.write(STORAGE_KEY, sessions);
+      }
+    }catch(e){}
+  }
+
+  function renderSavedSessions(){
+    var list = document.getElementById("sessionList");
+    var block = document.getElementById("savedBlock");
+    if (!list || !block) return;
+
+    var eqFilter =
+      document.getElementById("equipmentId").value.trim() ||
+      qs("eq") ||
+      qs("equipmentId") ||
+      localStorage.getItem("nexus_active_eq") ||
+      "";
+
+    var sessions = readSessions();
+    var filtered = sessions.filter(function(s){
+      var equipment = (s && (s.equipment || s.eq || s.equipmentId || "")).toString().trim();
+      return !eqFilter || equipment === eqFilter;
+    });
+
+    if (!filtered.length){
+      list.innerHTML = '<div class="small">No saved Fluke sessions for this equipment yet.</div>';
+      block.style.display = "block";
+      return;
+    }
+
+    list.innerHTML = filtered.map(function(s, idx){
+      var count = Array.isArray(s.rows) ? s.rows.length : 0;
+      var importedAt = s.importedAt || "";
+      var building = s.building || "";
+      var equipment = s.equipment || s.eq || s.equipmentId || "";
+      return [
+        '<div class="glass-block" style="margin-top:10px;">',
+          '<div class="small"><strong>Session ', escapeHtml(String(idx + 1)), '</strong></div>',
+          '<div class="small" style="margin-top:6px;"><strong>Equipment:</strong> ', escapeHtml(equipment), '</div>',
+          '<div class="small" style="margin-top:4px;"><strong>Building:</strong> ', escapeHtml(building), '</div>',
+          '<div class="small" style="margin-top:4px;"><strong>Imported:</strong> ', escapeHtml(importedAt), '</div>',
+          '<div class="small" style="margin-top:4px;"><strong>Rows:</strong> ', escapeHtml(String(count)), '</div>',
+        '</div>'
+      ].join("");
+    }).join("");
+
+    block.style.display = "block";
+  }
+
+  function saveFlukeSession(rows){
+    try{
+      var eq =
+        document.getElementById("equipmentId").value.trim() ||
+        qs("eq") ||
+        qs("equipmentId") ||
+        localStorage.getItem("nexus_active_eq") ||
+        "NO_EQ";
+
+      var building =
+        document.getElementById("jobId").value.trim() ||
+        qs("jobId") ||
+        qs("building") ||
+        qs("job") ||
+        localStorage.getItem("nexus_active_building") ||
+        "";
+
+      localStorage.setItem("nexus_active_eq", eq);
+      if (building) localStorage.setItem("nexus_active_building", building);
+
+      var sessions = readSessions();
+
+      var newSession = {
+        id: "FLUKE-" + Date.now(),
+        equipment: eq,
+        eq: eq,
+        equipmentId: eq,
+        building: building,
+        importedAt: new Date().toISOString(),
+        source: "fluke_csv",
+        rows: rows
+      };
+
+      sessions.push(newSession);
+      writeSessions(sessions);
+
+      setStatus("Saved successfully (" + rows.length + " rows).", false);
+      renderSavedSessions();
+    }catch(err){
+      console.error(err);
+      setStatus("Save failed: " + (err && err.message ? err.message : err), true);
+    }
+  }
+
+  function clearPreview(){
+    parsedRows = [];
+    document.getElementById("previewBlock").style.display = "none";
+    document.getElementById("saveBtn").disabled = true;
+    setStatus("");
+  }
+
+  document.getElementById("parseBtn").addEventListener("click", async function(){
+    try{
+      var fileInput = document.getElementById("file");
+      var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+      if (!file){
+        setStatus("Select a CSV file first.", true);
+        return;
+      }
+
+      var text = await file.text();
+      var lines = text
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .map(function(l){ return l.trim(); })
+        .filter(function(l){ return l.length > 0; });
+
+      if (lines.length < 2){
+        setStatus("CSV does not contain usable data rows.", true);
+        return;
+      }
+
+      var dataLines = lines.slice(1);
+      var rows = [];
+
+      for (var i = 0; i < dataLines.length; i++){
+        var cols = parseCsvLine(dataLines[i]);
+        var row = buildRow(cols);
+
+        var hasAnyValue =
+          row.timestamp || row.voltage || row.resistance || row.units ||
+          row.pi || row.dar || row.passFail || row.notes;
+
+        if (hasAnyValue){
+          rows.push(row);
+        }
+      }
+
+      if (!rows.length){
+        setStatus("No usable data rows were found after parsing.", true);
+        return;
+      }
+
+      parsedRows = rows;
+      renderPreview(rows, file.name);
+      document.getElementById("saveBtn").disabled = false;
+      setStatus("Parsed " + rows.length + " rows.", false);
+    }catch(err){
+      console.error(err);
+      setStatus("Parse failed: " + (err && err.message ? err.message : err), true);
+    }
+  });
+
+  document.getElementById("saveBtn").addEventListener("click", function(){
+    if (!parsedRows || !parsedRows.length){
+      setStatus("Nothing to save.", true);
+      return;
+    }
+    saveFlukeSession(parsedRows);
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", function(){
+    clearPreview();
+  });
+
   window.NEXUS_back = function(){
     try{
       if (document.referrer && document.referrer.indexOf(location.host) !== -1){
@@ -478,11 +742,13 @@ body{font-family:Arial,Helvetica,sans-serif !important;}
         return false;
       }
     }catch(e){}
-    var qs = new URLSearchParams(location.search);
-    var eq = qs.get("eq") || qs.get("equipmentId");
-    location.href = eq ? `../equipment.html?eq=${encodeURIComponent(eq)}` : "../equipment.html";
+    var qsObj = new URLSearchParams(location.search);
+    var eq = qsObj.get("eq") || qsObj.get("equipmentId") || document.getElementById("equipmentId").value.trim();
+    location.href = eq ? ("../equipment.html?eq=" + encodeURIComponent(eq)) : "../equipment.html";
     return false;
   };
+
+  renderSavedSessions();
 })();
 </script>
 
