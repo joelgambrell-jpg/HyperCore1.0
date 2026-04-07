@@ -405,8 +405,8 @@
       <div class="hint">
         This generates a single printable package that includes: RIF (digital No-Procore readout), L2 (digital No-Procore readout),
         Megohmmeter Test Log (Line/Load), <b>Equipment Megohmmeter Test (If Applicable)</b>, Fluke Connect Megohmmeter Testing,
-        Torque Log, Finished Product Verification Photo (if saved), and Pre-FOD (readout + link). Procore upload is manual in this
-        pre-Firebase build: export to PDF, then open the Procore page and attach the PDF.
+        Snap-on TorqueConnect import sessions, Torque Log, Finished Product Verification Photo (if saved), and Pre-FOD (readout + link).
+        Procore upload is manual in this pre-Firebase build: export to PDF, then open the Procore page and attach the PDF.
       </div>
 
       <div id="printArea">
@@ -588,26 +588,54 @@
     );
 
     const tilt = data.tilt || {};
-    const tiltKeys = Object.keys(tilt);
+
+    const units =
+      data?.units ||
+      data?.unit ||
+      data?.notes?.unit ||
+      '';
+
+    const torqueNotes =
+      data?.torqueNotes ||
+      data?.notes?.notes ||
+      data?.notes?.comment ||
+      data?.notes?.remarks ||
+      data?.notes?.torque ||
+      '';
+
+    const updatedAt =
+      data?.meta?.updatedAt ||
+      data?.updatedAt ||
+      '';
 
     return `
       <div class="kv">
-        ${kvRow('Units', data?.notes?.unit)}
-        ${kvRow('Torque Notes', data?.notes?.torque)}
-        ${kvRow('Updated At', data?.meta?.updatedAt)}
+        ${kvRow('Units', units)}
+        ${kvRow('Torque Notes', torqueNotes)}
+        ${kvRow('Updated At', updatedAt)}
       </div>
+
       <h3>Torque Rows</h3>
       ${rows.length
         ? renderTable(
             ['Location','Description','Size','Torque','Initials','Date','Notes'],
-            rows.map(r => [r.location, r.description, r.size, r.torque, r.initials, r.date, r.notes])
+            rows.map(r => [
+              r.location || '',
+              r.description || '',
+              r.size || '',
+              r.torque || r.actualTorque || '',
+              r.initials || '',
+              r.date || '',
+              r.notes || ''
+            ])
           )
         : `<div class="muted">(No rows filled)</div>`}
+
       <h3>Tilt / Verification</h3>
-      ${tiltKeys.length
+      ${Object.keys(tilt).length
         ? renderTable(
             ['Phase','Result'],
-            tiltKeys.map(k => [k, tilt[k]])
+            Object.keys(tilt).map(k => [k, tilt[k]])
           )
         : `<div class="muted">(No tilt results saved)</div>`}
     `;
@@ -1015,6 +1043,75 @@
     `;
   }
 
+  function getSnaponRows(session){
+    if(Array.isArray(session?.rows)) return session.rows;
+    if(Array.isArray(session?.events)) return session.events;
+    if(Array.isArray(session?.data)) return session.data;
+    return [];
+  }
+
+  function renderSnaponSessionTables(title, sessions){
+    if(!Array.isArray(sessions) || !sessions.length){
+      return `<div class="section-gap"><h3>${safe(title)}</h3><div class="muted">No Data</div></div>`;
+    }
+
+    let html = `<div class="section-gap"><h3>${safe(title)}</h3>`;
+
+    sessions.forEach((session, index) => {
+      const rows = getSnaponRows(session);
+      const createdAt =
+        session?.capturedAt ||
+        session?.importedAt ||
+        session?.createdAt ||
+        '';
+      const sessionId =
+        session?.id ||
+        session?.sessionId ||
+        '';
+      const sourceName =
+        session?.fileName ||
+        session?.source ||
+        'Snap-on Import Session';
+
+      html += `
+        <div class="source-box">
+          <div><b>Session ${index + 1}</b> - ${safe(sourceName)}${createdAt ? ` - ${safe(createdAt)}` : ''}</div>
+          ${sessionId ? `<div class="muted mono" style="margin-top:4px;">sessionId: ${safe(sessionId)}</div>` : ''}
+        </div>
+      `;
+
+      if(!rows.length){
+        html += `<div class="muted" style="margin-top:8px;">(No torque events in session)</div>`;
+        return;
+      }
+
+      html += renderTable(
+        ['Timestamp','Actual Torque','Target Torque','Angle','Units','Notes'],
+        rows.map(r => [
+          r.timestamp || r.time || r.date || '',
+          r.actualTorque || r.torque || r.value || '',
+          r.targetTorque || r.target || '',
+          r.angle || '',
+          r.units || r.unit || '',
+          r.notes || r.note || r.comment || ''
+        ])
+      );
+    });
+
+    html += `</div>`;
+    return html;
+  }
+
+  function renderSnaponSection(sessions){
+    if(!Array.isArray(sessions) || !sessions.length){
+      return `<div class="muted">No saved Snap-on / TorqueConnect import data found.</div>`;
+    }
+
+    return `
+      ${renderSnaponSessionTables('Imported Torque Sessions', sessions)}
+    `;
+  }
+
   function ccsIsFullySignedOff(eqId){
     const eqk = (eqId || 'NO_EQ').trim() || 'NO_EQ';
 
@@ -1060,7 +1157,9 @@
     const l2Link = eq ? nexusUrl(`l2_no_procore.html?eq=${encodeURIComponent(eq)}`) : '';
     const megLink = eq ? nexusUrl(`meg_log.html?eq=${encodeURIComponent(eq)}`) : '';
     const equipMegLink = eq ? nexusUrl(`equipment_meg.html?eq=${encodeURIComponent(eq)}`) : '';
+    const flukeLink = eq ? nexusUrl(`meg/fluke_import.html?eq=${encodeURIComponent(eq)}`) : '';
     const torqueLink = eq ? nexusUrl(`torque_log.html?eq=${encodeURIComponent(eq)}`) : '';
+    const snaponLink = eq ? nexusUrl(`torque/snapon_import.html?eq=${encodeURIComponent(eq)}`) : '';
     const fpvLink = eq ? nexusUrl(`fpv_photo_capture.html?eq=${encodeURIComponent(eq)}`) : '';
     const prefodLink = eq ? nexusUrl(`prefod.html?eq=${encodeURIComponent(eq)}`) : '';
     const ccsLink = eq ? nexusUrl(`construction_check_sheet.html?eq=${encodeURIComponent(eq)}`) : '';
@@ -1077,6 +1176,8 @@
         ${renderStatusLine('L2 Installation Verification', isDone('l2'), l2Link)}
         ${renderStatusLine('Megohmmeter Test Log', isDone('meg'), megLink)}
         ${renderStatusLine('Equipment Megohmmeter Test', isDone('equipment_meg') || isDone('equip_meg'), equipMegLink)}
+        ${renderStatusLine('Fluke Connect Import', true, flukeLink)}
+        ${renderStatusLine('Snap-on TorqueConnect Import', true, snaponLink)}
         ${renderStatusLine('Torque Log', isDone('torque'), torqueLink)}
         ${renderStatusLine('Finished Product Verification', isDone('fpv') || isDone('fpv_photo'), fpvLink)}
         ${renderStatusLine('Pre-FOD', isDone('prefod'), prefodLink)}
@@ -1257,10 +1358,8 @@
         ${kvRow('Storage', 'nexus.torque.sessions.v1')}
         ${kvRow('Sessions (for debug)', String(snaponEqSessions.length))}
       </div>
-      <div class="source-box" style="margin-top:10px;">
-        <div class="muted">
-          Snap-on import sessions are referenced here for package traceability. The printable torque content below is rendered from the saved torque log data for this equipment.
-        </div>
+      <div style="margin-top:10px;">
+        ${renderSnaponSection(snaponEqSessions)}
       </div>
 
       <h2 style="margin-top:18px;">Torque Log</h2>
